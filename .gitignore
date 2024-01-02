@@ -1,12 +1,7 @@
 *.o
 *test*
 GO
-*.mac
-xxx
-dung
 historical/
-A
-pure.a
-early pure.a
 ClearCD
 clearcd.c
+source/
