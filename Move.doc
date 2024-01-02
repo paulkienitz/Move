@@ -1,5 +1,5 @@
 
-                                    MOVE                (release 1.2)
+                                    MOVE                (release 1.3)
 
 Move is a replacement for the AmigaDOS pain-in-the-ass Rename command.  It
 can rename single files and directories, move them to other directories, and
@@ -17,8 +17,8 @@ Rename command you would have to type the vol:dir/subdir/ path twice.
 
 The basic ways to use Move are as follows.  First:
 
-              MOVE [FROM] oldname [TO] newname
-   example:   move :t/ed-backup to :foo/readme
+               MOVE [FROM] oldname [TO] newname
+    example:   move :t/ed-backup to :foo/readme
 
 where oldname is the pathname of an existing file or directory, and newname
 is a pathname specifying a new name in an existing directory, and the words
@@ -26,8 +26,8 @@ FROM and TO are optional.  This is like the existing Rename command.  AS can be
 used instead of TO -- this sounds better when using the Name version than TO
 does.  Or:
 
-              MOVE [FROM] oldname [TO] directory
-   example:   move sys:downloads/Dr  C:
+               MOVE [FROM] oldname [TO] directory
+    example:   move sys:downloads/Dr  C:
 
 where the TO arg is an existing directory.  The FROM arg is relocated into
 the directory named, keeping its old name.  In the example above,
@@ -35,24 +35,21 @@ sys:downloads/Dr would become C:Dr.  The TO arg is optional; if there is no
 second name in the command, the FROM file or directory is moved into your
 current directory.
 
-              MOVE [FROM] pattern [TO] directory
-   example:   move temp:#?.library to libs:
+               MOVE [FROM] pattern [TO] directory
+    example:   move temp:#?.library to libs:
 
-The pattern is a directory pathname followed by an AmigaDOS pattern.  You may
+The pattern is a directory path followed by an AmigaDOS pattern.  You may
 not use a pattern for the directory names in the middle of the path, for
 instance sys:work/#?/#?.c -- patterns are only recognized in the final part
 of the pathname after the last slash or colon.  (This may change in a future
 version.)  A pattern with no pathname refers to files in the current
 directory, of course.  All files and subdirectories in that directory which
-match the pattern are moved to the TO directory.  There is one extension of
-the pattern syntax, under AmigaDOS 1.2 and 1.3:  a ~ character immediately
-before the pattern makes it move all files and subdirectories which do NOT
-match the pattern.  For instance, "move work/~#?.c oldwork" would move all
-files except those whose names end in ".c" from work to oldwork.  Under
-AmigaDOS 2.04 and higher, the new pattern syntax with square brackets and
+match the pattern are moved to the TO directory.  Since Move requires
+AmigaDOS 2.04 or higher, the new pattern syntax with square brackets and
 everything is used, and "*" is equivalent to "#?" if you set the Dos WILDSTAR
 flag with one of the many little programs available for the purpose, such as
-my own NathanHale program (included).
+my own NathanHale program, which is included (but actually belongs to my Dr
+2.0 release, so that's where you can find the source).
 
 The version called Name works a little differently.  To be specific, it
 treats relative pathnames (that is, pathnames with no ":") as being relative
@@ -60,52 +57,85 @@ to the directory that the source file(s) are in, rather than relative to the
 current directory that the command was run from.  This feature can often save
 typing directory names twice.  For instance, the command:
 
-     Name ram:env/Foo sys/Bar
+    Name ram:env/Foo sys/Bar
 
 would be equivalent to:
 
-     Rename ram:env/Foo ram:env/sys/Bar
+    Rename ram:env/Foo ram:env/sys/Bar
+
+This can save a lot of typing if the source path is lengthy, for instance:
+
+    Name sys:Prefs/Env-Archive/Sys/overscan.prefs overscan.prefs-bak
+
+Using Name with a directory as the To argument can feel counterintuitive,
+because you expect it to rename rather than moving stuff into a directory,
+but this is too useful to not allow.  For instance, you can move a file into
+a child directory of its current location with a command like:
+
+    Name sys:work/topic/project/documents/outdated-file old
+
+to move outdated-file into the sys:work/topic/project/documents/old folder.
 
 Arguments are given according to a BCPL-style command template.  For Move,
 the template is:
 
-     FROM/A,TO=AS,F=FILES/S,Q=QUIET/S,I=ICONS/S,N=NAME/S
+    From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,N=Name/S,MoveOnly/S,NameOnly/S
 
-For Name, the template is:
+For the Name version, the Name switch is replaced with a Move switch:
 
-     FROM/A,TO=AS,F=FILES/S,Q=QUIET/S,I=ICONS/S,M=MOVE/S
+    From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,M=Move/S,MoveOnly/S,NameOnly/S
 
-The NAME or N switch makes Move act like Name, and the MOVE or M switch makes
+The Name or N switch makes Move act like Name, and the Move or M switch makes
 Name act like Move.  The idea is that you only need one -- whichever one you
 find useful more often, and when necessary use it to do the other's job too.
 One convenient thing you can do is use an alias to make one appear as the
-other, for instance "alias Name Move [] NAME".  Personally, I use both often
+other, for instance "alias Name Move [] Name".  Personally, I use both often
 enough so that I just make aliases called "m" and "n".
 
-Only the FROM arg is required.  It can be a file or directory name to be
-moved, or it can be a directory path with a pattern on the end.  The TO or AS
-arg is the new name that the source should have (if FROM is not a pattern),
+Only the From arg is required.  It can be a file or directory name to be
+moved, or it can be a directory path with a pattern on the end.  The To or As
+arg is the new name that the source should have (if From is not a pattern),
 or the name of an existing directory to move the source into.  There are
-three other option switches.  They change its behavior as follows:
+five other option switches.  They change its behavior as follows:
 
-F or FILES applies only when the FROM arg is a pattern.  It causes only files
-to be moved, and all subdirectories to be left in place, even if they match
-the pattern.
+F or FilesOnly applies only when the From arg is a pattern.  It causes only
+files to be moved, and all subdirectories to be left in place, even if they
+match the pattern.
 
-Q or QUIET also applies only when a pattern is used.  Normally Move writes
+Q or Quiet also applies only when a pattern is used.  Normally Move writes
 the name of every file that matches the pattern and is successfully moved.
-QUIET prevents this output.  It does not affect the output of error messages,
+Quiet prevents this output.  It does not affect the output of error messages,
 except for a couple that do not actually indicate failure: "Nothing matched
 pattern" and "Source and destination are the same directory; nothing done."
 
-When I or ICONS is used, whenever Move moves a file or directory it will also
+When I or Icons is used, whenever Move moves a file or directory it will also
 move that file's icon if it exists.  That is, whenever a file or subdirectory
 named Foo is moved, Foo.info will also be moved to the same place if it
 exists.  This works with patterns as well as individual files and dirs.
 
-Bug:  If using it Name-style, sometimes if the TO arg is an illegal name,
-like say "ram:///blip", it will do nothing yet report success.  This is a
-filesystem problem; it expects you not to send it such ridiculous names.
+The MoveOnly flag changes how the To or As argument is interpreted.  Normally
+this can be ambiguous: if it's a directory it becomes the destination of a
+move, but if it's a nonexistent name it's used for renaming the source.  (If
+it exists and is a file, the operation fails.)  Sometimes this ambiguity is
+undesirable, such as in a batch operation.  So this switch tells Move that it
+should only move things and never rename; if To is not an existing directory,
+it will fail with a message such as "Can't move to MyDesiredDestinationDir:
+directory not found".
+
+The NameOnly flag is like MoveOnly, but with the opposite effect: it ensures
+that it should only rename things and not move them.  If To is the path of an
+existing directory or file, it fails.  To succeed, To must be a new name;
+otherwise it will fail with a message such as "Can't rename as MyHopedForName:
+object already exists".
+
+(If both MoveOnly and NameOnly are specified, all operations will fail, but
+but the message will tell you what it would have done.)
+
+I will mention an apparent bug: if using it Name-style, sometimes if the To
+arg is an illegal path, like for instance "ram:///blip", it will do nothing
+yet report success.  This is an inherent problem with some filesystems,
+which expect you not to send them such ridiculous names, and there isn't much
+that Move can do about it.
 
 A note on capitalization of names:  With the Copy and AmigaDOS 2.0 Rename
 commands, when you move or copy a file to a new directory, the name it gets
@@ -141,18 +171,18 @@ Starting in version 1.2, Move can also relabel a volume.  The FROM argument
 must be the root level of a volume or device, and the TO argument must be
 a simple name with no slashes, with or without a colon after it.  The NAME
 option must be used, or you'll get an error message saying "Cannot move
-device or volume".  For example, to relabel volume Master:, you can go
+device, volume, or assign."  For example, to relabel volume Master:, you can go
 
     Name Master: CopyOfMaster:
 or
-    Move name Master: CopyOfMaster
+    Move Name Master: CopyOfMaster
 
 
 Things I could add in future versions, but probably won't: the ability to
 use patterns throughout a pathname instead of just at the end, and maybe to
 simulate moving across volumes like Arp Move.  I'm inclined against the
 latter -- to me that seems like a dangerous feature, particularly since
-there's a bug in the filesystem that makes programs think a write was
+there's a bug in older filesystems that makes programs think a write was
 successful when in fact "Volume Foo has a read/write error" requesters have
 been coming up.
 
@@ -160,7 +190,17 @@ Move and Name (and NathanHale) are placed in the public domain by Paul
 Kienitz.  Email paul@paulkienitz.net to contact me.
 
 
-Differences between release 1.2 and release 1.1:
+Differences between release 1.3 (which was the first true public release) and
+version 1.2:
+
+ - MoveOnly and NameOnly switches added.
+
+ - It now explicitly avoids trying to move or rename assigned names;
+   commands like "Move FONTS: MoreFonts" will produce error messages.
+
+ - It's finally been subject to thorough testing, with several issues fixed.
+
+Differences between version 1.2 and version 1.1:
 
  - Fixed bugs with pattern parsing.
 
@@ -173,7 +213,8 @@ Differences between release 1.2 and release 1.1:
  - Now using malloc instead of manually managing all memory freeing.
 
 
-Differences between release 1.1 and release 1.0:
+Approximate differences between version 1.1 and version 1.0 (there really
+wasn't any clear point of division):
 
  - The separate Name program with MOVE option did not exist in 1.0.
 
@@ -183,3 +224,5 @@ Differences between release 1.1 and release 1.0:
    before.
 
  - 1.0 had an enforcer hit -- fixed.
+
+ - Move 1.0 could run under AmigaDOS 1.x, at least in its earlier forms.

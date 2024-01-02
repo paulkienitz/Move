@@ -1,11 +1,27 @@
-/* -=-=- To do:
-***** HANDLE case of "Name xxxxx :yyyy" using Rootify() somehow!  (Move works ok.)
-** SOMETIMES error messages say "Can't move :" (blank from name).
-* Will fail if current directory is zero, when (sameob || !too) && samedir?  (How test?)
+/* -=-=- TO DO?
+
+someday... >>> Let's make this 1.x-compatible again if we can!
+    Test a flag for any 2.x features such as multi-assign or SameLock.
+    CATALOG OF ALL EXEC/DOS CALLS THAT WE MAKE:
+        UnLock, Lock
+        FreeMem, AllocMem
+        FreeArgs, ReadArgs      -- V36
+        SetIoErr, IoErr         -- SetIoErr is V36
+        PrintFault              -- V36
+        PutStr, Printf          -- V36
+        FilePart, PathPart      -- V36
+        ParsePatternNoCase, MatchPatternNoCase    -- V37
+        Examine, ExNext
+        Output, Write
+        Rename
+        DupLock
+        ParentDir, CurrentDir
+        SameLock                -- V36
+Argh, that's a lot to replace, especially ReadArgs and ParsePatternNoCase.
 
 Use MatchNext instead of ExNext, to handle multi-part patterns?  Nah.
 Simulate move between volumes like Arp move?  Nah.
-Fancy feature?: if multi assign in To, find first one on correct volume?  Nah.
+Try to do something useful with multi-assigns?  Nah.
 */
 
 /* The idea here is to come up with a MOVE command which will obsolete RENAME
@@ -14,9 +30,9 @@ Fancy feature?: if multi assign in To, find first one on correct volume?  Nah.
  * only specify a directory.
  */
 
-/* Written by Paul Kienitz, 10/88 - present, as my very first useful program
- * (first begun, but not first finished!) for my brand new used Amiga 1000.
- * What the hell, it's in the public domain.
+/* Written by Paul Kienitz, begun 10/88 as my very first useful program
+ * for my brand new used Amiga 1000.  What the hell, it's in the public domain.
+ * (Not actually finished and released until the 2020s!?)
  */
 
 /* Records listened to while writing the first version of this program:
@@ -27,7 +43,7 @@ Fancy feature?: if multi assign in To, find first one on correct volume?  Nah.
  *      Bruce Springsteen:  Darkness On The Edge Of Town
  *      Bruce Hornsby:  The Way It Is
  *      the Dead Milkmen:  Big Lizard In My Back Yard
- *      the REPO MAN soundtrack album
+ *      the Repo Man soundtrack album
  *      Translator:  Heartbeats And Triggers
  * (I have to acknowledge my sources, don't I?)
  *
@@ -77,8 +93,9 @@ struct fode {
 
 fist maybe;
 
-str from, too;                          /* these don't need freeing */
-bool quiet, nodirs, icons, samedir, quessed, anything, samemom = false;
+str from, too, originalfrom, finalfrom, finaltoo;    /* don't need freeing */
+bool quiet, nodirs, icons, samedir, moveonly, nameonly;  /* template flags */
+bool anything, colonial, samemom = false;
 
 BPTR lick = 0, deer, elk;                       /* locks */
 FIB *fb;
@@ -94,8 +111,6 @@ adr rda;
 
 void die(short r)
 {
-    fist foo;
-
     if (lick)
         UnLock(lick);
     if (deer)
@@ -135,7 +150,7 @@ void CCcheck(void)
 
 /* positive if a comes after b alphabetically */
 
-short alphacmp(register ubyte *a, ubyte *b)
+short alphacmp(register ubyte *a, register ubyte *b)
 {
     return stricmp((str) *a, (str) *b);
 }
@@ -156,7 +171,7 @@ str Cat(str front, str back)
 
 
 
-BSTR beaster(str s)
+BSTR beaster(str s)            /* caller must FreeBeast */
 {
     int l;
     ubyte *r;
@@ -208,6 +223,7 @@ bool SplitTailPat(void)
     strncpy(fro, from, n);
     fro[n] = '\0';
     from = fro;
+    finalfrom = *from ? from : "current directory";
     i = *p ? -1 : ParsePatternNoCase(patt, mesh, PATLIMIT * 2 + 8);
     if (i < 0) {
         hair = ERROR_INVALID_COMPONENT_NAME;         /* sort of */
@@ -234,9 +250,13 @@ bool SplitTailPat(void)
 long RenamePacket(str oldn, str newn)
 {
     struct FileLock *flake = gbip(deer);
-    BSTR own = beaster(oldn), nun;
+    struct FileLock *flick = gbip(lick);
+    BSTR own, nun;
     long r1;
 
+    if (flake && flick && flake->fl_Task != flick->fl_Task)
+	return ERROR_RENAME_ACROSS_DEVICES;	/* DoPkt won't catch this! */
+    own = beaster(oldn);
     if (!own)
         return hair;
     if (!(nun = beaster(newn))) {
@@ -248,7 +268,6 @@ long RenamePacket(str oldn, str newn)
     FreeBeast(nun);
     return r1 ? 0 : IoErr();
 }
-
 
 
 void MovePattern(void)
@@ -322,9 +341,8 @@ void MovePattern(void)
             nn = maybe->name;
             if (hair = RenamePacket(nn, nn)) {
                 if (hair == ERROR_INVALID_LOCK)
-                    hair == ERROR_RENAME_ACROSS_DEVICES;
-                Printf("Error moving %s from %s to %s", nn, from, too);
-                PrintFault(hair, "");
+                    hair = ERROR_RENAME_ACROSS_DEVICES;
+                Printf("Error moving %s from %s to %s", nn, finalfrom, finaltoo);
             } else if (!quiet)
                 Printf(" %s\n", nn);
             /* continue if file disappeared, dest already has that name, or
@@ -354,12 +372,12 @@ void MovePattern(void)
 void Ready(long alen, str aptr)
 {
     adr rar;
-    static long drugs[6] = { 0, 0, 0, 0, 0, 0 };
+    static long drugs[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
     static char template[] =
 #ifdef NAME
-        "From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,M=Move/S";
+        "From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,M=Move/S,MoveOnly/S,NameOnly/S";
 #else
-        "From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,N=Name/S";
+        "From/A,To=As,Q=Quiet/S,F=FilesOnly/S,I=Icon/S,N=Name/S,MoveOnly/S,NameOnly/S";
 #endif
 
     if (DOSBase->dl_lib.lib_Version < 37) {
@@ -379,14 +397,21 @@ void Ready(long alen, str aptr)
     }
     from = (str) drugs[0];
     too = (str) drugs[1];
-    nodirs = drugs[2] & true;
-    quiet = drugs[3] & true;
+    quiet = drugs[2] & true;
+    nodirs = drugs[3] & true;
     icons = drugs[4] & true;
 #ifdef NAME
     samedir = !drugs[5];
 #else
     samedir = drugs[5] & true;
 #endif
+    moveonly = drugs[6] & true;
+    nameonly = drugs[7] & true;
+    originalfrom = from;
+    finalfrom = from;
+    finaltoo = too && *too ? too :
+               (samedir ? "source directory" : "current directory");
+    colonial = from[0] && from[strlen(from) - 1] == ':';
 }
 
 
@@ -405,9 +430,14 @@ bool DoIt(bool scanning, bool todir, str name)
         } else
             MovePattern();
         suck = true;
+    } else if (samemom && (!too || !*too)) {
+        if (!quiet)
+            PutStr("Source and destination are the same directory; "
+                   "nothing done.\n");
+        suck = true;
     } else {
         if (!too && samemom)
-            too = name = fromtail;
+            too = finaltoo = name = fromtail;
         if (todir)
             suck = !(hair = RenamePacket(name, name));
         else if (samedir)
@@ -440,10 +470,25 @@ void RelabelVolume(BPTR rootlock, str name)
 {
     BSTR nam;
     struct MsgPort *rootask;
+    struct DevProc *devpr;
     bool suck = true;
     short l;
 
     hair = 0;
+    devpr = GetDeviceProc(originalfrom, null);
+    if ((devpr && devpr->dvp_Flags & DVPF_ASSIGN) || (deer && colonial)) {
+        /* simple assigns don't set DVPF_ASSIGN, check ^^ for parent */
+        FreeDeviceProc(devpr);
+        hair = ERROR_OBJECT_WRONG_TYPE;
+        PutStr("Cannot rename via assign.\n");
+        die(10);
+        /* It is sometimes possible to rename a directory that an assign points
+           to, but if you try this, be sure to call GetDeviceProc again to check
+           that it isn't a multi-assign, because those not only aren't logical
+           to rename, they have also been seen to cause big crashes. */
+    }
+    rootask = devpr->dvp_Port;
+    FreeDeviceProc(devpr);
     if (!name || !*name) {
         hair = ERROR_INVALID_COMPONENT_NAME;
         PutStr("No name given to relabel volume with.\n");
@@ -462,7 +507,6 @@ void RelabelVolume(BPTR rootlock, str name)
         die(10);
     }
     if (nam = beaster(name)) {
-        rootask = bip(struct FileLock, rootlock)->fl_Task;
         if (!DoPkt1(rootask, ACTION_RENAME_DISK, nam))
             hair = IoErr();     /* ^^^ use packet so volume is unambiguous */
         FreeBeast(nam);
@@ -477,12 +521,7 @@ bool SameFilename(str s1, str s2)
     register short l2;
     register char c;
     register bool ret;
-    register str col = strrchr(s2, ':');
 
-    /* If the second name ends with a colon (designating a device, volume, or
-       assign), then this test is not applicable.  Return true, no mismatch. */
-    if (col && col[1] == '\0')
-        return true;
     s2 = FilePart(s2);
     l2 = strlen(s2) - 1;
     c = s2[l2];
@@ -495,12 +534,17 @@ bool SameFilename(str s1, str s2)
 
 
 
-void Rootify(BPTR *lick)
+
+BPTR LockVolumeRoot(BPTR startingLock)
 {
-    BPTR d2;
-    while (*lick = ParentDir(d2 = *lick))
-        UnLock(d2);
-    *lick = d2;
+    /* locking ":" relative to startingLock may not work, so: */
+    BPTR parentLock = DupLock(startingLock), parentLock2;
+    while (parentLock2 = ParentDir(parentLock)) {
+        UnLock(parentLock);
+        parentLock = parentLock2;
+    }
+    /* ...you'd think the OS would have a better way to do this */
+    return parentLock;
 }
 
 
@@ -515,7 +559,7 @@ void _main(long alen, str aptr)        /* low-level entrypoint: no argv[], no st
     if (scanning = !elk) {
         hair = IoErr();
         if (!SplitTailPat()) {
-            Printf("Can't move %s", from);
+            Printf("Can't move %s", originalfrom);
             Croak("");
         }
     } else {
@@ -523,10 +567,10 @@ void _main(long alen, str aptr)        /* low-level entrypoint: no argv[], no st
             hair = IoErr();
             Croak("Examine() failed");
         }
-        name = &namespace[0];
+        name = &namespace[0];               /* source file or dir is identified */
         strcpy(name, fb->fib_FileName);
-        if (!SameFilename(name, from)) {
-            char nec;                           /* hard or soft link! */
+        if (!colonial && !SameFilename(name, from)) {              /* or is it? */
+            char nec;                           /* hard/soft link... or assign? */
             ne = FilePart(from);
             if (strlen(ne) > 107) {             /* should never happen? */
                 hair = ERROR_INVALID_COMPONENT_NAME;
@@ -545,27 +589,30 @@ void _main(long alen, str aptr)        /* low-level entrypoint: no argv[], no st
             }
             *ne = nec;
         } else {
-            deer = ParentDir(elk);
+            deer = ParentDir(elk);              /* will return 0 if at root */
             hair = IoErr();
         }
-        if (!deer) {
+        /* deer is the directory the source object(s) are in... unless: */
+        if (!deer || colonial) {
             if (hair == ERROR_NO_FREE_STORE)
-                Croak("Cannot rename");
+                Croak("Can't move");
             if (samedir)
                 RelabelVolume(elk, too);                /* DOES NOT RETURN */
             else {
-                PutStr("Cannot move device or volume\n");
+                PutStr("Cannot move device, volume, or assign.\n");
+                hair = ERROR_OBJECT_WRONG_TYPE;
                 die(10);
             }
         }
     }
+    /* that's got the From side sorted, now let's look at the To side */
     if (too) {
-        if (strchr(too + 1, ':'))               /* fully qualified path? */
+        if (strchr(too, ':'))      /* fully qualified or root-relative path */
             samedir = false;
         if (samedir)
             ocd = CurrentDir(deer);
         lick = RLock(too);                              /* does dest exist? */
-        sameob = SameLock(lick, elk) == LOCK_SAME;
+        sameob = elk && SameLock(lick, elk) == LOCK_SAME;
         hair = lick ? IoErr() : 0;
         if (samedir)
             CurrentDir(ocd);
@@ -574,56 +621,73 @@ void _main(long alen, str aptr)        /* low-level entrypoint: no argv[], no st
         if (lick)
             UnLock(lick);
         if (samedir) {
-            lick = DupLock(deer);
+            lick = DupLock(deer);                   /* dest is source dir */
             samemom = true;
         } else {
-            lick = DupLock(ocd = CurrentDir(0));
+            lick = DupLock(ocd = CurrentDir(0));    /* dest is current dir */
             CurrentDir(ocd);
         }
     }
     if (elk)
         UnLock(elk);
     elk = 0;
-    if (lick) {
+    if (lick) {                                         /* dest identified? */
         if (!samemom && !Examine(lick, fb)) {           /* yes;  file or dir? */
             hair = IoErr();
             Croak("Examine() failed");
         }
-        if (scanning && fb->fib_EntryType < 0) {
+        if (nameonly) {
+            hair = ERROR_OBJECT_EXISTS;
+            PutStr("Can't rename as ");
+            Croak(finaltoo);
+        } else if (scanning && !samemom && fb->fib_EntryType < 0) {
             hair = ERROR_OBJECT_WRONG_TYPE;
-            Printf("Can't move a pattern to %s", too);
-            Croak("");
+            PutStr("Can't move a pattern to ");
+            Croak(finaltoo);
         } else if (sameob)
             name = too;
         else if (samemom)
             todir = true;
         else if (fb->fib_EntryType > 0) {               /* it's a dir */
-            todir = true;
-            samemom = SameLock(deer, lick) == LOCK_SAME;
+	    todir = true;
+	    samemom = SameLock(deer, lick) == LOCK_SAME;
         } else {
-            hair = ERROR_OBJECT_EXISTS;
+            hair = ERROR_OBJECT_EXISTS;     /* can't move to existing file */
             suck = false;
         }
-    } else                                      /* it doesn't exist yet */
-        if (scanning) {
+    } else {                                     /* dest doesn't exist yet */
+        if (moveonly) {
             hair = ERROR_DIR_NOT_FOUND;
-            Printf("Can't move a pattern to %s", too);
-            Croak("");
+            PutStr("Can't move to ");
+            Croak(finaltoo);
+        } else if (scanning) {
+            hair = ERROR_DIR_NOT_FOUND;
+            PutStr("Can't move a pattern to ");
+            Croak(finaltoo);
         } else {
             name = too;
             if (hair == ERROR_OBJECT_NOT_FOUND)
                 hair = 0;
             if (hair)
                 suck = false;                           /* bad volume, etc */
-            else if (samedir)
-                lick = DupLock(deer);
+            else if (samedir) {
+                if (too[0] == ':') {    /* rename packet can't handle this */
+                    lick = LockVolumeRoot(deer);
+                    name = ++too;
+                } else
+                    lick = DupLock(deer);
+            }
         }
+    }
 
     /* Time to DO IT */
     if (suck)                   /* prevent multiple "please insert"s */
         suck = DoIt(scanning, todir, name);
     if (!suck) {
-        Printf("Can't move %s to %s", from, too);
+        if (samedir)
+            Printf("Can't name %s as %s", originalfrom, finaltoo);
+        else
+            Printf("Can't move %s to %s", originalfrom, finaltoo);
         Croak("");
     }
     hair = 0;

@@ -7,46 +7,73 @@
 # we are only supporting an AmigaDOS 2.04+ version of Move/Name.
 
 
-CFLAGS = -ps -ss ## -hi II16
-C = $(CFLAGS)
-L = -m +q
+# release targets:
 
-S = -bs -s0f0n
-
-# make a sdb'able and db'able version:
-
-ram\:smove : smove.o
-	ln $L -g -w -o ram:smove smove.o -lc16
-	@dr -l ram:smove\#?
-
-smove.o : move.c
-	cc $C $S -o smove.o move
-
-
-# make a finished non-debuggable version:
+both : m n
 
 m : ram:Move
 
-ram\:Move : move.o
-	ln $L -o ram:Move move.o purify.o -lc16
-	@protect ram:Move +p
-	@dr ram:Move
-
-move.o : move.c
-	cc $C move
-
-# purify.o : purify.a		# commented out 'cause I keep purify.o
-#	as purify.a		# in my object libraries directory
-
-
-# make an alternate finished version with slightly different properties:
-
 n : ram:Name
 
-ram\:Name : name.o
-	ln $L -o ram:Name name.o purify.o -lc16
+# debug targets:
+
+dbg : sm sn
+
+sm : ram:smove
+
+sn : ram:sname
+
+
+
+
+CFLAGS = -ps -ss
+C = $(CFLAGS)
+L = -m +q
+S = -bs -s0f0n
+
+
+# sdb'able and db'able versions:
+
+ram\:smove : t:smove.o
+	ln $L -g -w -o ram:smove t:smove.o -lc16
+	## @delete quiet t:smove.o
+	@dr -l ram:smove\#?
+
+t\:smove.o : move.c
+	cc $C $S -o t:smove.o move.c
+
+ram\:sname : t:sname.o
+	ln $L -g -w -o ram:sname t:sname.o -lc16
+	## @delete quiet t:sname.o
+	@dr -l ram:sname\#?
+
+t\:sname.o : move.c
+	cc $C $S -d NAME -o t:sname.o move.c
+
+
+
+# finished non-debuggable versions:
+
+ram\:Move : t:move.o lib:purify.o
+	ln $L -o ram:Move t:move.o lib:purify.o -lc16
+	@protect ram:Move +p
+	## @delete quiet t:move.o
+	@dr ram:Move
+
+t\:move.o : move.c
+	cc $C -o t:move.o move
+
+ram\:Name : t:name.o lib:purify.o
+	ln $L -o ram:Name t:name.o lib:purify.o -lc16
 	@protect ram:Name +p
+	##@delete quiet t:name.o
 	@dr ram:Name
 
-name.o : move.c
-	cc $C -d NAME -o name.o move.c
+t\:name.o : move.c
+	cc $C -d NAME -o t:name.o move.c
+
+
+# this goes in lib so it's shared with other projects like CLImax:
+
+lib\:purify.o : purify.a
+	as purify.a -o lib:purify.o
