@@ -255,7 +255,7 @@ long RenamePacket(str oldn, str newn)
     long r1;
 
     if (flake && flick && flake->fl_Task != flick->fl_Task)
-	return ERROR_RENAME_ACROSS_DEVICES;	/* DoPkt won't catch this! */
+        return ERROR_RENAME_ACROSS_DEVICES;        /* DoPkt won't catch this! */
     own = beaster(oldn);
     if (!own)
         return hair;
@@ -649,8 +649,8 @@ void _main(long alen, str aptr)        /* low-level entrypoint: no argv[], no st
         else if (samemom)
             todir = true;
         else if (fb->fib_EntryType > 0) {               /* it's a dir */
-	    todir = true;
-	    samemom = SameLock(deer, lick) == LOCK_SAME;
+            todir = true;
+            samemom = SameLock(deer, lick) == LOCK_SAME;
         } else {
             hair = ERROR_OBJECT_EXISTS;     /* can't move to existing file */
             suck = false;
