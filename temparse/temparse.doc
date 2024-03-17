@@ -1,0 +1,621 @@
+
+                            TEMPARSE FOR AZTEC C
+
+ßßßß  This is a preliminary interim release.  The intent is to convert this
+ßßßß  into a .library under a different name, with many functions being
+ßßßß  refactored without regard to compatibility, says Mister Beta: ß^)
+
+The starting idea here is to enable an Aztec C program for Amiga to resemble
+standard CLI command programs by parsing their argument lines according to a
+TEMPLATE.  Like how COPY has a template that says FROM,TO/A,ALL/S,QUIET/S,
+and similar ones for other commands?  Regular Aztec C programs can't do it
+because the default argument line parsing routine doesn't let you tell the
+difference between a word in quotes and the same word without quotes, and
+uses quote-quote to embed a quote in a quoted word instead of asterisk-quote
+like the regular C: directory programs do.
+
+Once I had that working, I started making this a library in which to collect
+various utility functions which help allow command-line programs that run
+under AmigaDOS 1.2 or 1.3 to have some of the capabilities they could have
+available if they had been built to require AmigaDOS 2.0 or newer.  Besides
+command line template parsing, these include wildcard pattern matching,
+error reporting, and a way to conveniently do IO with DOS packets.  More may
+be added.
+
+Temparse consists of six separate modules: the ones used for templates are
+ARSE, TEMPARSE, and COOKT, and the supplemental ones are PATMATCH, FAULT, and
+PACKET.  (PATMATCH is largely someone else's code -- Jeff Lydiatt translated
+it from BCPL and then I modified it a bit.)  The source files of the modules
+are called arse.c, temparse.c, cookt.c, patmatch.c, fault.c, and packet.c, as
+you would expect; their object modules are collected into a Manx library
+called temparse.lib.
+
+To use any of the functions I describe below, just include temparse.lib in
+the ln command for linking your program, making sure that it's mentioned
+BEFORE c.lib or -lc.  As an alternate syntax you can say -ltemparse.  The
+version of temparse.lib provided is compiled with small code, small data, and
+short ints. Also provided is temparseL.lib, which is compiled with +p (large
+everything). It's easy to make other versions, like this for short ints but
+large code & data:
+
+   cc -ps -mc -md arse.c                      ; or maybe -o t:arse.o
+   cc -ps -mc -md cookt.c
+   cc -ps -mc -md temparse.c
+   cc -ps -mc -md patmatch.c
+   cc -ps -mc -md fault.c
+   cc -ps -md -md packet.c
+   lb temparse cookt arse temparse patmatch fault packet
+
+
+-------------------------   ARSE module:
+
+The arse module contains a function called _cli_parse which, if you link it
+in, gets called automatically before your main program starts.  To link it
+in, declare it but don't call it.  Like this (or if you haven't pulled in the
+dosextens.h include that defines struct Process, the first arg can just be
+void *):
+
+    extern void _cli_parse(struct Process *pp, long alen, char *aptr);
+
+It makes the argument line your program is given when it runs get parsed into
+argv-words differently.  Inside a quoted word, asterisk-quote will mean a
+quote included in the word, and asterisk-N will mean newline and asterisk-E
+will mean the escape character.  (A quote in the middle of a word that does
+not start with a quote is simply treated like any other character in all
+cases.)  Example:  with the default Manx system, if you run a program called
+foo as follows:
+
+    1> foo one two "word ""three"" here"
+
+then argv[0] will be «foo», argv[1] will be «one», argv[2] will be «two», and
+argv[3] will be «word "three" here».  (Of course, argv[4] is NULL.)  We use
+french quotes « » to delimit strings here in order to avoid confusion with
+regular quotes inside the strings.  But if you use the temparse library,
+then you would get that effect this way:
+
+    1> foo one two "word *"three*" here"
+
+This may not seem like an improvement, but it is the way other standard CLI
+programs all work (because they're written in BCPL).  If a user who expects
+behavior as described in the AmigaDOS manual enters that line with asterisks
+into a Manx program without temparse, argv[3] will be «word *», argv[4] will
+be «three*», and argv[5] will be « here».  Also, you can do stuff like:
+
+    1> foo "*nHi there*n" "*e[33mFOO*e[0m"
+
+which makes argv[1] contain «
+Hi there
+», that is, "Hi there" with a newline before and after, and argv[2] contain
+escape sequences which, if written to a CON window, will cause the word FOO
+to be written in orange (or whatever the color of the cursor is) instead of
+black or white.  By the way, if you leave out the last closing quote, this
+_cli_parse will pretend there was a quote at the end of the line.  With BCPL
+programs, a missing quote is a fatal error.
+
+That is not the only effect of linking this _cli_parse function into your
+Aztec program.  Additionally, with it you can tell which of the argv words
+were quoted in the argument line and which were not.  To do this, check
+argv[n][-1]; that is, the character before the start of the word in question.
+It will be a double quote for quoted words, a nul otherwise.  Don't check
+argv[0][-1], though; in the case of argv[0] you can't tell.  Example:
+
+    1> foo yah "yah"
+
+argv[1] and argv[2] both point to «yah».  But argv[1][-1] is nul (0) and
+argv[2][-1] is a double quote (34).
+
+There is one case where you call _cli_parse yourself, and that's if you do not
+have a main function.  Aztec lets you start the app with a function named
+_main instead, where the arguments are (long alen, char *aptr), which are the
+length and contents of the command line arguments it was invoked with, as a
+single string.  I often use _main, because I don't want to use the default
+argc/argv parsing at all, and also don't want to use stdio.  In this case you
+should explicitly invoke _cli_parse yourself, as follows:
+
+    extern int _argc;
+    extern char **_argv;
+
+    int _main(long alen, char *aptr)
+    {
+        _cli_parse((struct Process *) FindTask(null), alen, aptr);
+        /* ... the rest of your program */
+    }
+
+In this case, the parsed arguments it creates end up in the global variables
+_argc and _argv.  This is what the default version of _cli_parse does
+if you don't use temparse, and it is these two variables that the default
+version of _main passes as parameters to main.  If you have _main instead of
+main as your entry point, use the global _argv as the source of parameters to
+feed to the TemplateParse function described further down, instead of the
+argv parameter received by main.
+
+Another useful effect:  in CLI you can extend an argument line onto two or
+more lines by ending all lines but the last with a plus sign followed
+immediately by a newline.  Normally, argv contains only words found on the
+first line, and standard BCPL programs also don't parse content on these
+following lines as arguments to match against their templates.  The temparse
+library allows you to see the rest of the argument line by means of a global
+variable:
+
+    extern char *extra_argline;
+
+extra_argline points to the second (and further) argument lines, as an
+unprocessed nul-terminated string.  Example:
+
+    1> foo bar +
+    baz quux +
+    arf barf
+
+This causes argv[1] to be bar and argv[2] to be NULL.  (argc = 2.) 
+extra_argline points to «baz quux
+arf barf
+».  Note that this string contains a newline at the end of each line that was
+entered, but not the newline at the end of the first line.  If no + was used,
+then extra_argline is null.
+
+--------------     ParseLine function
+
+But how, you ask, can I convert those extra lines into argv-words, or
+otherwise convert an arbitrary string instead of the command line that was
+passed in?  There is another function in the ARSE module besides _cli_parse,
+which has similar functionality -- it is:
+
+    extern char **ParseLine(int *pargc, char *line);
+
+It takes as input a nul-terminated string and returns an argv-like array of
+pointers to strings which contain the words in the string parsed just as if
+it were the command argument line (but with NULL in element 0), and sets the
+number of words (counting element 0 as a word, just like argv) in the
+variable pointed to by the pargc parameter.  You can look for quotes in
+argv[n][-1] as for _cli_parse above.  Example:
+
+    int wordcount;
+    char **words = ParseLine(&wordcount, "One \"two and a half\"");
+
+then words[1] = «One», words[2] = «two and a half», words[2][-1] = '"',
+words[3] and words[0] are both NULL, and wordcount is 3.  **** NOTE THIS: 
+because ParseLine calls the same internal routine that _cli_parse does, it
+resets extra_argline whenever it's called, so if you want to save it then
+copy it into another char pointer variable.  But ParseLine does not set the
+standard global variables _argc and _argv, nor _arg_lin (where _cli_parse
+stores a copy of the raw argument line it received).
+
+If the string passed to ParseLine has a newline in the middle, then
+extra_argline will point to the part after the newline, otherwise it will be
+set to NULL.  The string it points to is a copy, not part of the original, so
+you can trash one without affecting the other.  ParseLine can be used to
+replace argv entirely, for instance if you want to support the typical
+feature where if the user gives a question mark for an argument, you prompt
+them to type in proper arguments.  You would do something like this:
+
+    if (argc == 2 && argv[1][0] == '?' && argv[1][1] == 0) {
+        char buf[256];
+        char * oldargv0 = argv[0];
+        printf("%s: ", template);
+        gets(buf);
+        argv = ParseLine(&argc, buf);
+        argv[0] = oldargv0;
+    }
+
+The new values of argc and argv can now be used exactly as if they were the
+originals passed to main.  You don't have to worry about freeing any memory
+(it uses malloc), as long as you exit normally or with the Manx exit or
+_exit.  If you use AmigaDOS Exit or something, a small amount of memory
+will be lost.
+
+
+-------------------------   TEMPARSE module
+
+Now, on to the stuff that this is all about!  TEMPARSE!  This module includes
+only one function:
+
+    extern char **TemplateParse(char **argv, char **plates);
+
+What it does is take an argv-like array of words and match them to the
+keywords in a template string.  The plates argument is not a template string,
+but an array of template words which you can get by passing the template
+string to the function CookTemplate:
+
+    extern char **CookTemplate(char *template);
+
+which is in the COOKT module.  I'll tell you more about CookTemplate below.
+
+TemplateParse returns an array of string pointers with the first pointer
+containing (as a long integer) the number of pointers after it in the array. 
+This number is equal to the number of keywords in the template (which is the
+number of commas in the template plus one).  Each pointer points to a word in
+the argv array which corresponds to the matching keyword in the template.  For
+instance, if you go
+
+    static char template[] = "FROM, TO/A, ALL/S, QUIET/S";
+    char **result = TemplateParse(argv, CookTemplate(template));
+
+then result[0] will contain 4, result[1] will point to whatever argv word
+corresponds to the keyword "FROM", result[2] is the matchee for "TO", and so
+on.  When there is no actual word to match a given keyword, the matching
+result pointer is NULL.  If a switch is present, then the matching result
+value is a pointer to an empty string (not NULL).  If, in the above example,
+you call the program like this:
+
+    1> foo all to "zazzle *"foo*"!" from ork
+
+so that argv ends up as
+
+    argv[0] = «foo»              program name
+    argv[1] = «all»              matches ALL/S
+    argv[2] = «to»               next word matches TO/A
+    argv[3] = «zazzle "foo"!»    
+    argv[4] = «from»             next word matches FROM
+    argv[5] = «ork»
+    argv[6] = NULL
+
+then result points to this array:
+
+    result[0] = 4L               number of formal parameters (four)
+    result[1] = «ork»            FROM value
+    result[2] = «zazzle "foo"!»  TO value
+    result[3] = «»               ALL value (pointer to empty string)   ***** NO, DOSTRUE! **
+    result[4] = 0L               QUIET value (NULL)
+
+If the arguments given fail to fit the template, it returns zero in result[0]
+and a pointer to an error message string in result[1], which is one of these:
+"Too many positional arguments given", "No value given after final keyword",
+"Required argument not given", or "Out of memory".  By the way, TemplateParse
+will not work unless the _cli_parse from the arse module is linked in,
+because it needs to see whether there are quotes by looking at argv[n][-1] so
+that you can prevent an argument from being seen as a keyword by putting it
+in quotes, e.g. a file named "From".  You don't need to declare this
+_cli_parse, because TemplateParse pulls it in automatically, but you do need
+the whole library rather than just the object file from temparse.c.
+
+
+-------------------------   COOKT module:
+
+This module includes CookTemplate and a function called MortalSyn which
+reports syntax errors in badly formed templates.
+
+    extern char **CookTemplate(char *template);
+
+The array returned by CookTemplate is kind of similar to the one returned by
+TemplateParse.  The number of keywords is in the first array element as a
+long integer, and then that many further entries point to strings which begin
+with one of the characters A, S, K, X, or space.  This character tells
+whether the keyword had a /A or /S or /K on it.  X means /A/K and space means
+none of the above.  This letter is always uppercase.  Immediately after comes
+the keyword itself.  If there are two synonymous keywords with the same
+meaning, they are separated by an equal sign.  There is no whitespace after
+the first character.  The keyword can be empty, consisting of only the first
+letter/space.  Example:
+
+    char **plates = CookTemplate(" , foo/s, a = arglebargle /k /a ");
+
+returns this array:
+
+    plates[0] = 3L
+    plates[1] = « »     /* one space */
+    plates[2] = «Sfoo»
+    plates[3] = «Xa=arglebargle»
+
+If you want to create that plates array "by hand" (with *strict* adherence to
+the format I've just explained), then you don't need CookTemplate.  This will
+make your program noticeably smaller.  (Unfortunately all this shit adds many
+kbytes to the size of your program; them BCPL programs get to use a routine
+in the Kickstart, which is why they're all small.)  Example:
+
+    char **plates = { (char *) 3L, " ", "Sfoo", "Xa=arglebargle" };
+    char **result = TemplateParse(argv, plates);
+
+The template string itself is just like one you would put after .KEY in an
+Execute file, except for these liberalizations:
+
+- whitespace around words and punctuation is okay.
+
+- you can have empty keywords (two commas with nothing in between),
+  or several keywords with the same name, without problems.
+
+- you don't have to put the /S and /K keywords at the end of the template.
+  (The Execute documentation claims that it "removes parameter names 
+  from the input line to fill the meanings of any keyword values it finds.
+  Then, with any remaining input, it fills the leftover keyword positions
+  according to the position of the input value", but in early versions it
+  doesn't actually manage to do this unless all the /K and /S keywords come
+  later in the template than the ones filled positionally.  TemplateParse
+  works the way Execute is supposed to.)
+
+Note that:  case of letters doesn't matter; any characters, including strange
+8-bit-ascii characters, are a legal part of a keyword except comma, slash,
+equal sign, quote, and whitespace; and that there is always at least one
+keyword in any template, even a completely empty one.
+
+Things which will cause CookTemplate to fail are: slash not followed by A,
+K, or S; slash followed by more than one non-whitespace character before the
+next comma or slash; /K or /S after empty keyword; equal sign with empty word
+before or after; whitespace in the middle of a keyword (or two keywords not
+separated by comma or equal sign, which is the same thing); leading quote;
+/A and /S, or /K and /S both on one word.  If a template syntax error
+happens, CookTemplate will return zero in plates[0] and a long integer in
+plates[1] which is the index of the character in the template at which the
+error was discovered.  There is a function
+
+    extern void MortalSyn(char *template, long offset);
+
+in the COOKT module which can be used to write out an error message given
+this information.  For example:
+
+    static char template[] = " from /a , to /k/ , all/ s ";
+    char ** plates = CookTemplate(template);
+    if (!plates[0]) MortalSyn(template, plates[1]);
+    else ...
+
+will write the following to standard output, with an initial newline:
+
+    Bad template " from /a , to /k/ , all/ s ".
+                                   =^=
+
+Normally this is not needed, as your template is a constant value.  This is
+mainly useful for prototyping or in cases where users can set up their own
+templates, as in my FRX tool.
+
+Warning:  If you have an error in a handmade plates array that you pass to
+TemplateParse, the result could be guruesome.
+
+
+-------------  Example using the whole package to implement a template:
+
+    main(int argc, char **argv)
+    {
+        char **result;
+        static char template[] = "Source/a, Dest, List/k, Q = Quiet/s";
+        char **plates = CookTemplate(template);
+        /* plates = { (char *) 4, "ASource", " Dest", "KList", "SQ=Quiet" } */
+        char buffer[256];
+        struct Process *me;
+        ...
+
+        if (!*plates) {
+            MortalSyn(template, plates[1]);
+            exit(20);
+        }
+        if (argc == 2 && *(argv[1]) == '?' && argv[1][1] == 0) {
+            register char *oldargv0 = *argv;
+            printf("%s: ", template);
+            gets(buffer);
+            argv = ParseLine(&argc, buffer);
+            *argv = oldargv0;
+        }
+        result = TemplateParse(argv, plates);
+        if (!*result) {
+            printf(Error:  %s.\n(Usage %s)\n", result[1], template);
+            me = (struct Process *) FindTask(NULL);
+            me->pr_Result2 = ERROR_LINE_TOO_LONG;
+            /* Those last two lines are optional.  Under AmigaDOS 1.x that's
+	       a correct error number (120) for template mismatch as well as
+	       for too long an input.  Under 2.x we would use SetIoErr(). */
+            exit(10);
+        }
+        ...     
+        fromfile = fopen(result[1], "r");
+        if (result[2]) tofile = fopen(result[2], "w");
+        else tofile = fopen(default, "w");
+        if (result[3]) listfile = fopen(result[3], "w");
+        else listfile = NULL;
+        verbose = !result[4];
+        ...
+
+If your program is intended for AmigaDOS 2.0 or higher, you would pass your
+template to the dos.library function ReadArgs, which even automates the
+prompting of the user with the template if they enter a question mark as
+their parameter.  But if you try to call ReadArgs in AmigaDOS 1.x, you will
+get a crash.  So an application intended to support all generations of the
+operating system should check the dos version, and if it's high enough make
+use of ReadArgs, but otherwise fall back on temparse.  Note that ReadArgs
+supports an extended template syntax with flags /F, /M, /N, and /T, which
+temparse does not.  This is because it was meant to supply the missing
+functionality for AmigaDOS 1.x applications, and in that environment no
+command made use of these extended template features.
+
+                                      ~
+
+This concludes the functions for handling command templates.  But as long as
+we are supporting missing features from first-generation AmigaDOS, there are
+a couple of other things we can implement, such as wildcard pattern matching.
+
+
+-------------------------   PATMATCH module:
+
+The heart of this module is the Match function, which checks an arbitary
+string against a pattern.  But before you can use it, you have to "compile"
+the pattern with another function named CmplPat.  Both return a simple
+boolean flag value where true means success, as a long int.
+
+    extern long CmplPat(char Pattern[], short Aux[]);
+    extern long Match(char Pat[], short Aux[], char Str[]);
+
+The compilation step requires an auxiliary array of 128 short ints.  This
+supports patterns up to 127 characters long, which if I'm not mistaken was a
+normal expected limit in early AmigaDOS.  The pattern and the auxiliary array
+are passed to CmplPat, and then if that succeeds (indicating that the pattern
+is valid and usable), both of them and the string under test are passed to
+Match, which returns true if the string fits the pattern.  Here is an example
+of its usage, from Jeff Lydiatt:
+
+    WORD Aux[128];
+
+    if (CmplPat(Pat, Aux) == 0)
+    {
+        printf("Bad Wildcard Expression\n");
+        exit(1);
+    }
+    if (Match(Pat, Aux, Str))
+       printf("String matches the pattern\n");
+    else
+       printf("String does NOT match the pattern\n");
+
+I've added a third function for testing if a pattern is present in a string.  If
+it returns false, you don't need to treat the string as a pattern -- CmplPat
+and Match can be skipped.
+
+    extern long HasPat(char Pattern[]);
+
+In AmigaDOS 2.0, they added the pattern functions ParsePatternNoCase and
+MatchPatternNoCase, which follow a similar design of compiling followed by
+match testing, and also supports a more extended version of the pattern
+syntax.  As with the template support in temparse, our goal here is only to
+support the simpler syntax which is normally expected in first-generation
+AmigaDOS applications.  And I must emphasize that, while it's acceptable to
+use TemplateParse instead of the OS-supplied ReadArgs when running under
+newer versions of AmigaDOS, since the template will only need to use the
+older features, it is not cool to use these CmplPat and Match functions as
+a substitute for AmigaDOS's ParsePatternNoCase and MatchPatternNoCase when
+they are available.  Doing so deprives the user of extended wildcard syntax
+which they expect to have available to them.  Any code designed to be run
+under all versions of AmigaDOS should test the version and use the best
+available API.
+
+Another reason to not use this module unless you have to is that Lydiatt's
+translated Match function has no awareness of international file systems,
+and will only match upper-ascii letters like Å or ü in a case-sensitive way.
+I will address this in the future.
+
+
+-------------------------   FAULT module:
+
+I have added a function to substitute for the Fault function.  Given an
+AmigaDOS error number, FaultMessage returns a pointer to a static string
+containing the corresponding error message.  This supports only the rather
+small set of error codes that were defined up to AmigaDOS 1.3, and only the
+English language version of the texts.  (AmigaDOS didn't really get localized
+well to other languages until release 2.1; I've checked 1.2 and 1.3 AmigaDOS
+manuals written in German, and they still show these messages in English.)
+
+    extern char *FaultMessage(long errorcode);
+
+Even more than with CmplPat and Match, this function should not be invoked if
+Fault and PrintFault are available -- it will not even have any message at
+all for a large number of error codes that were defined later.
+
+It returns a pointer to a string constant if the errorcode value is known.
+Treat this string as read-only.  If it's not known, it returns NULL, and it
+is up to you to produce a generic message stating the number.  The correct
+way to do that is with a call such as sprintf(buffer, "Error %ld", IoErr()).
+The size of the buffer only needs to be about twenty bytes.  And this module,
+as a bonus on the bonus, includes a small version of a familiar sprintf-like
+function, which is based on the built-in RawDoFmt feature of the Exec.  The
+format strings you can use with it share the limitations of RawDoFmt, and
+always assume that %d, %u, and %x refer to short ints, so you have to use
+%ld, %lu, or %lx for long ints.  This implementation is called VSprintf, and
+it does not return any value, as it looks like the return value of RawDoFmt
+may have changed across OS versions.
+
+    extern void VSprintf(char *buffer, char *format, void *args);
+
+where args is a pointer to the first of a sequence of parameters to be used
+by the formatting, as in standard vsprintf.  So a full implementation of an
+error message output might look something like this:
+
+    long hair = IoErr();
+    char buf[20];
+    char *message = FaultMessage(hair);
+    if (!message) {
+        VSprintf(buf, "Error %ld", &hair)
+        message = buf;
+    }
+    /* this is one means by which you might display the message: */
+    Write(Output(), message, strlen(message));
+
+
+-------------------------   PACKET module:
+
+The DoDosPacket function here works very much like the DoPkt function in
+later AmigaDOS versions, in that it sends a DOS packet to a file handler,
+awaits its reply on your process's internal message port, and then returns
+the handler's primary result value while setting the secondary result code
+into the process's IoErr.  There are also functions to do parts of the
+operation in a more piecemeal way:
+
+    extern struct StandardPacket *CreateDosPacket(struct MsgPort *replyport);
+    extern void FreeDosPacket(struct StandardPacket *packet);
+
+These functions allocate and deallocate the packet that you can send to a
+handler.  CreateDosPacket will return null if there's no memory, or if the
+replyport parameter is null.  The internal linking is set up, but the packet
+needs to have its action code (sp_Pkt.dp_Type) set, along with any needed
+arguments (sp_Pkt.dp_Arg1 etc) before you can send it to a handler.
+
+    extern long InvokeDosPacket(struct StandardPacket *packet,
+                                struct MsgPort *handler, long *result2);
+
+Given an initialized packet, this sends it to the handler messageport and
+awaits its reply.  After reply, this function returns the primary result
+value and places the secondary result value into the long pointed to by
+the result2 parameter, unless you pass null there.
+
+    extern long DoDosPacket(struct MsgPort *handler, long action,
+                            long arg1, long arg2, long arg3, long arg4,
+                            long arg5, long arg6, long arg7);
+
+This is the one that puts all the steps together into a single operation.
+Most packets do not need all seven arguments, so you'll have to pass in extra
+zeroes for the unused ones.
+
+Later I might add asynchronous SendDosPacket and WaitDosPacket methods.
+
+Finally, this module contains one bonus method -- a compatible replacement
+for the 2.x SameLock function (which should probably have its own module):
+
+    long CompareLocks(BPTR lock1, BPTR lock2);
+
+It returns LOCK_SAME (defined in dos/dos.h) if two locks point to the same
+filesystem object, LOCK_SAME_VOLUME if they point to different objects within
+the same volume, and LOCK_DIFFERENT if they are on different volumes.  It
+works by comparing the handler process, volume record, and key of the two
+locks.  This one can be freely used under 2.x, because if it detects that
+2.x is present, it actually calls SameLock.  It does this because under 2.x
+there is another step besides making the three comparisons: when the volumes
+match, it sends an ACTION_SAME_LOCK packet to the handler as a final test.
+This allows handlers to define matching or differing locks by more than just
+a key value, but this packet doesn't exist in 1.x handlers.
+
+But under 1.x, this CompareLocks function can do something that SameLock
+never got around to implementing: the ability to compare a nonzero lock to
+a null lock, and detect when the real lock points to the default root
+directory, or a directory on the default volume.  But this added ability
+applies only under 1.2 or 1.3, and disappears under 2.x versions.
+
+
+-------------------------   SUMMARY of the visible objects in each module:
+
+ARSE:     void   _cli_parse(struct Process *pp, long alen, char *aptr);
+          char **ParseLine(int *pargc, char *line);
+          long   CheckForUnclosedQuote(void);
+          char  *extra_argline;
+          long   has_unclosed_quote;    /* DOSTRUE or DOSFALSE */
+          char  *_arg_lin, **_argv;     /* Aztec compatible */
+          long  *_arg_len;              /* Aztec compatible */
+          int    _argc;                 /* Aztec compatible */
+
+COOKT:    char **CookTemplate(char *template);
+          void   MortalSyn(char *template, long offset);
+
+TEMPARSE: char **TemplateParse(char **argv, char **plates);
+
+PATMATCH: long   CmplPat(char Pattern[], short Aux[]);
+          long   Match(char Pattern[], short Aux[], char Str[]);
+          long   HasPat(char Pattern[]);
+
+FAULT:    char  *FaultMessage(long errorcode);
+          void   VSprintf(char *buf, char *format, void *args);
+
+PACKET:   struct StandardPacket *CreateDosPacket(struct MsgPort *replyport);
+          void   FreeDosPacket(struct StandardPacket *packet);
+          long   InvokeDosPacket(struct StandardPacket *packet,
+                                 struct MsgPort *handler, long *result2);
+          long   DoDosPacket(struct MsgPort *handler, long action,
+                             long arg1, long arg2, long arg3, long arg4,
+                             long arg5, long arg6, long arg7);
+          long CompareLocks(BPTR lock1, BPTR lock2);
+
+  - once again the doc file is almost as long as the source code -
+
+Temparse is by Paul Kienitz, in the public domain.  Send any feedback
+to paul@paulkienitz.net.
