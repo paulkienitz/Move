@@ -613,7 +613,7 @@ PACKET:   struct StandardPacket *CreateDosPacket(struct MsgPort *replyport);
           long   DoDosPacket(struct MsgPort *handler, long action,
                              long arg1, long arg2, long arg3, long arg4,
                              long arg5, long arg6, long arg7);
-          long CompareLocks(BPTR lock1, BPTR lock2);
+          long   CompareLocks(BPTR lock1, BPTR lock2);
 
   - once again the doc file is almost as long as the source code -
 
