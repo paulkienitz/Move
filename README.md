@@ -4,7 +4,7 @@ Move is an Amiga CLI command, which acts as a replacement for the Rename command
 
 This was the very first Amiga utility I ever started coding, and yet it was the last to be released, as I never quite got it 100% finished for all use cases, though it was close enough that I was using it daily without noticing the shortcomings.  I should have made it public a long long time ago.
 
-For Move 1.4 I am including the source for my Temparse library, which was used to restore compatibility with AmigaDOS 1.2 and 1.3 in a codebase which had long since abandoned it.  The source for this is in the temparse subdirectory.
+For Move 1.4 I am including the source for my Temparse library, which willnbe needed to restore compatibility with AmigaDOS 1.2 and 1.3 in a codebase which had long since abandoned it.  The source for this is in the temparse subdirectory.
 
 Note that the correct character set for the source files is ISO-8859-1, and this applies to the .doc files as well.
 
