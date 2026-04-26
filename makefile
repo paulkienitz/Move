@@ -40,15 +40,15 @@ S = -bs -s0f0n
 
 # sdb'able and db'able versions:
 
-ram\:smove : t:smove.o lib:temparse.lib
+ram\:smove : t:smove.o libz:temparse.lib
 	ln $L -g -w -o ram:smove t:smove.o -ltemparse -lc16
 	## @delete quiet t:smove.o
 	@dr -l ram:smove\#?
 
-t\:smove.o : move.c lib:temparse.lib
+t\:smove.o : move.c libz:temparse.lib
 	cc $C $S -d ONE -o t:smove.o move.c
 
-ram\:sname : t:sname.o lib:temparse.lib
+ram\:sname : t:sname.o libz:temparse.lib
 	ln $L -g -w -o ram:sname t:sname.o -ltemparse -lc16
 	## @delete quiet t:sname.o
 	@dr -l ram:sname\#?
@@ -60,7 +60,7 @@ t\:sname.o : move.c
 
 # finished non-debuggable versions for 1.x:
 
-ram\:Move : t:move.o lib:purify.o lib:temparse.lib
+ram\:Move : t:move.o libz:purify.o libz:temparse.lib
 	ln $L -o ram:Move t:move.o purify.o -ltemparse -lc16
 	@protect ram:Move +p
 	## @delete quiet t:move.o
@@ -69,7 +69,7 @@ ram\:Move : t:move.o lib:purify.o lib:temparse.lib
 t\:move.o : move.c
 	cc $C -d ONE -o t:move.o move
 
-ram\:Name : t:name.o lib:purify.o lib:temparse.lib
+ram\:Name : t:name.o libz:purify.o libz:temparse.lib
 	ln $L -o ram:Name t:name.o purify.o temparse.lib -lc16
 	@protect ram:Name +p
 	##@delete quiet t:name.o
@@ -82,7 +82,7 @@ t\:name.o : move.c
 
 # finished non-debuggable versions for 2.x only:
 
-ram\:Move2 : t:move2.o lib:purify.o
+ram\:Move2 : t:move2.o libz:purify.o
 	ln $L -o ram:Move2 t:move2.o purify.o -lc16
 	@protect ram:Move2 +p
 	## @delete quiet t:move2.o
@@ -91,7 +91,7 @@ ram\:Move2 : t:move2.o lib:purify.o
 t\:move2.o : move.c
 	cc $C -o t:move2.o move
 
-ram\:Name2 : t:name2.o lib:purify.o
+ram\:Name2 : t:name2.o libz:purify.o
 	ln $L -o ram:Name2 t:name2.o purify.o temparse.lib -lc16
 	@protect ram:Name2 +p
 	##@delete quiet t:name2.o
@@ -99,9 +99,9 @@ ram\:Name2 : t:name2.o lib:purify.o
 
 t\:name2.o : move.c
 	cc $C -d NAME -o t:name2.o move.c
-        
+
 
 # this goes in lib so it's shared with other projects like CLImax:
 
-lib\:purify.o : purify.a
-	as purify.a -o lib:purify.o
+libz\:purify.o : purify.a
+	as purify.a -o libz:purify.o

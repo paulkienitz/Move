@@ -1,4 +1,5 @@
 *.o
+*.uaem
 *test*
 GO
 historical/
