@@ -4,7 +4,7 @@ Move is an Amiga CLI command, which acts as a replacement for the Rename command
 
 (Foreshadowing: if “Project One” happens, that challenge has been met.)
 
-This was the very first Amiga utility I ever started coding, and yet it was the last to be released, as I never quite got it 100% finished for all use cases, though it was close enough that I was using it daily without noticing the shortcomings.  I should have made it public a long long time ago.
+This was the very first Amiga utility I ever started coding, and yet it was the last to be released, as I never quite got it 100% finished for all use cases until much later, though it was close enough that I was using it daily without noticing the shortcomings.  I should have made it public a long long time ago.
 
 For Move 1.4 I am including the source for my Temparse library, which will be needed to restore compatibility with AmigaDOS 1.2 and 1.3 in a codebase which had long since abandoned it.  The source for this is in the temparse subdirectory.
 
